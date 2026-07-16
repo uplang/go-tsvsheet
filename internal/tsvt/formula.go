@@ -4,7 +4,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"github.com/uplang/go-tsvsheet/internal/constants"
-	grammar "github.com/uplang/go-tsvsheet/src/grammar/tsvsheet"
+	grammar "github.com/uplang/go-tsvsheet/internal/grammar"
 )
 
 // FormulaText is the source of a single formula expression — the part of a

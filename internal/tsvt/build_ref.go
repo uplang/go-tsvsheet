@@ -1,7 +1,7 @@
 package tsvt
 
 import (
-	grammar "github.com/uplang/go-tsvsheet/src/grammar/tsvsheet"
+	grammar "github.com/uplang/go-tsvsheet/internal/grammar"
 )
 
 // buildReference builds an A1 reference: a single cell or a two-cell range,

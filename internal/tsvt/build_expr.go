@@ -1,7 +1,7 @@
 package tsvt
 
 import (
-	grammar "github.com/uplang/go-tsvsheet/src/grammar/tsvsheet"
+	grammar "github.com/uplang/go-tsvsheet/internal/grammar"
 )
 
 // buildExpr converts one expression parse node into the typed Expr AST. The
