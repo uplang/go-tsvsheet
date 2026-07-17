@@ -92,9 +92,13 @@ func deleteTransform(at lineIndex) transform {
 }
 
 // InsertRow returns a new sheet with a blank row inserted before at.Row; every
-// reference to a row at or below it shifts down to follow its data. Only the
-// row coordinate of at is used.
+// reference to a row at or below it shifts down to follow its data. A negative
+// row is a no-op (mirroring DeleteRow), never a slice-bounds panic. Only the row
+// coordinate of at is used.
 func (s Sheet) InsertRow(at Address) Sheet {
+	if at.Row < 0 {
+		return s
+	}
 	return rewriteAll(
 		insertLine(s.cells, rowIndex(min(at.Row, len(s.cells)))),
 		rowAxis,
@@ -113,9 +117,13 @@ func (s Sheet) DeleteRow(at Address) Sheet {
 }
 
 // InsertCol returns a new sheet with a blank column inserted before at.Col;
-// every reference to a column at or right of it shifts right. Only the column
+// every reference to a column at or right of it shifts right. A negative column
+// is a no-op (mirroring DeleteCol), never a slice-bounds panic. Only the column
 // coordinate of at is used.
 func (s Sheet) InsertCol(at Address) Sheet {
+	if at.Col < 0 {
+		return s
+	}
 	return rewriteAll(insertColumn(s.cells, colIndex(at.Col)), colAxis, insertTransform(lineIndex(at.Col)))
 }
 
@@ -219,19 +227,50 @@ func shiftReference(ref tsvt.Reference, ax axis, tr transform) tsvt.Expr {
 		return tsvt.RefOperand{Ref: rangeRef} // a cross-sheet ref addresses another sheet — never shift it
 	}
 	if rangeRef.To == nil {
-		moved, ok := tr.point(ax.get(rangeRef.From))
-		if !ok {
-			return refError()
-		}
-		return tsvt.RefOperand{Ref: tsvt.RangeRef{From: ax.set(rangeRef.From, moved)}}
+		return shiftPoint(rangeRef, ax, tr)
 	}
-	lo, loOK := tr.lo(ax.get(rangeRef.From))
-	hi, hiOK := tr.hi(ax.get(*rangeRef.To))
-	if !loOK || !hiOK || lo > hi {
+	return shiftSpan(rangeRef, ax, tr)
+}
+
+// shiftPoint shifts a single-cell reference, collapsing to #REF! when the edit
+// deletes the cell it names.
+func shiftPoint(rangeRef tsvt.RangeRef, ax axis, tr transform) tsvt.Expr {
+	moved, ok := tr.point(ax.get(rangeRef.From))
+	if !ok {
 		return refError()
 	}
-	to := ax.set(*rangeRef.To, hi)
-	return tsvt.RefOperand{Ref: tsvt.RangeRef{From: ax.set(rangeRef.From, lo), To: &to}}
+	return tsvt.RefOperand{Ref: tsvt.RangeRef{From: ax.set(rangeRef.From, moved)}}
+}
+
+// shiftSpan shifts a range's two endpoints. The low transform applies to the
+// smaller axis coordinate and the high to the larger — ordered first, so a
+// reversed range (D5:D2) is shifted by the same rule the compute path already
+// normalizes it with, rather than spuriously collapsing to #REF! on any edit.
+// The original From/To endpoint identity (and each endpoint's other-axis
+// coordinate) is preserved.
+func shiftSpan(rangeRef tsvt.RangeRef, ax axis, tr transform) tsvt.Expr {
+	fromC := ax.get(rangeRef.From)
+	toC := ax.get(*rangeRef.To)
+	loC, hiC := orderLines(fromC, toC)
+	newLo, loOK := tr.lo(loC)
+	newHi, hiOK := tr.hi(hiC)
+	if !loOK || !hiOK || newLo > newHi {
+		return refError()
+	}
+	fromCoord, toCoord := newLo, newHi
+	if fromC > toC {
+		fromCoord, toCoord = newHi, newLo
+	}
+	to := ax.set(*rangeRef.To, toCoord)
+	return tsvt.RefOperand{Ref: tsvt.RangeRef{From: ax.set(rangeRef.From, fromCoord), To: &to}}
+}
+
+// orderLines returns its two coordinates low-first.
+func orderLines(a, b lineIndex) (lineIndex, lineIndex) {
+	if a > b {
+		return b, a
+	}
+	return a, b
 }
 
 // refError is the #REF! literal a deleted reference collapses to.

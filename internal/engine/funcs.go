@@ -9,9 +9,12 @@ import (
 	"github.com/uplang/go-tsvsheet/internal/tsvt"
 )
 
-// mod is truncated-toward-zero remainder, defined for negative and fractional
-// operands.
-func mod(l, r floatVal) floatVal { return floatVal(math.Mod(float64(l), float64(r))) }
+// mod is Excel's MOD remainder: it takes the sign of the divisor via floored
+// division (MOD(n,d) = n - d*FLOOR(n/d)), unlike Go's math.Mod, which takes the
+// sign of the dividend. So MOD(-3,2) is 1 (not -1) and MOD(3,-2) is -1 (not 1).
+func mod(l, r floatVal) floatVal {
+	return floatVal(float64(l) - float64(r)*math.Floor(float64(l)/float64(r)))
+}
 
 // power raises l to the r-th power.
 func power(l, r floatVal) floatVal { return floatVal(math.Pow(float64(l), float64(r))) }
@@ -333,7 +336,7 @@ var functions = map[string]function{
 	"sum":     {impl: fnSum, minArgs: 1, maxArgs: -1},
 	"min":     {impl: fnMin, minArgs: 1, maxArgs: -1},
 	"max":     {impl: fnMax, minArgs: 1, maxArgs: -1},
-	"count":   {impl: fnCount, minArgs: 1, maxArgs: -1},
+	"count":   {impl: fnCountNumbers, minArgs: 1, maxArgs: -1},
 	"avg":     {impl: fnAvg, minArgs: 1, maxArgs: -1},
 	"average": {impl: fnAvg, minArgs: 1, maxArgs: -1},
 	"abs":     {impl: fnAbs, minArgs: 1, maxArgs: 1},

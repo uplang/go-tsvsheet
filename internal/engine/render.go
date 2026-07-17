@@ -22,14 +22,95 @@ func renderExpr(expr tsvt.Expr) string {
 	case tsvt.RefOperand:
 		return renderReference(e.Ref)
 	case tsvt.Unary:
-		return string(e.Op) + renderExpr(e.X)
+		return string(e.Op) + operandParens(e.X, precUnary)
 	case tsvt.Percent:
-		return renderExpr(e.X) + "%"
+		return operandParens(e.X, precPercent) + "%"
 	case tsvt.Binary:
-		return renderExpr(e.Left) + " " + string(e.Op) + " " + renderExpr(e.Right)
+		return renderBinary(e)
 	default: // tsvt.Call
 		return renderCall(expr.(tsvt.Call))
 	}
+}
+
+// precedence ranks a rendered expression by how tightly it binds; a higher rank
+// binds tighter, so a sub-expression needs parentheses when it binds looser than
+// its context. The ranks mirror the grammar: a postfix % binds tightest, then ^,
+// unary sign, * /, + -, & concatenation, and comparisons loosest; atoms
+// (literals, refs, calls) never need parentheses.
+type precedence int
+
+const (
+	precCompare precedence = iota + 1
+	precCat
+	precAdd
+	precMul
+	precUnary
+	precPow
+	precPercent
+	precAtom
+)
+
+// exprPrec is the binding rank of an expression's top node.
+func exprPrec(expr tsvt.Expr) precedence {
+	switch e := expr.(type) {
+	case tsvt.Binary:
+		return binaryPrec(e.Op)
+	case tsvt.Unary:
+		return precUnary
+	case tsvt.Percent:
+		return precPercent
+	default:
+		return precAtom
+	}
+}
+
+// binaryPrec is the binding rank of a binary operator.
+func binaryPrec(op tsvt.BinaryOp) precedence {
+	switch op {
+	case tsvt.OpPow:
+		return precPow
+	case tsvt.OpMul, tsvt.OpDiv:
+		return precMul
+	case tsvt.OpAdd, tsvt.OpSub:
+		return precAdd
+	case tsvt.OpCat:
+		return precCat
+	default: // comparisons
+		return precCompare
+	}
+}
+
+// renderBinary renders a binary expression, parenthesizing each operand only
+// when the parser would otherwise regroup it.
+func renderBinary(e tsvt.Binary) string {
+	left := binaryOperand(e.Left, e.Op, false)
+	right := binaryOperand(e.Right, e.Op, true)
+	return left + " " + string(e.Op) + " " + right
+}
+
+// binaryOperand renders one operand of a binary op, wrapping it in parentheses
+// when its own precedence (and the parent's associativity) would let the parser
+// regroup the expression. `^` is right-associative, so its left operand needs
+// parentheses at equal precedence while every other operator's right one does.
+func binaryOperand(operand tsvt.Expr, parentOp tsvt.BinaryOp, isRight boolResult) string {
+	s := renderExpr(operand)
+	childPrec, parentPrec := exprPrec(operand), binaryPrec(parentOp)
+	tooLoose := childPrec < parentPrec ||
+		(childPrec == parentPrec && bool(isRight) != (parentOp == tsvt.OpPow))
+	if tooLoose {
+		return "(" + s + ")"
+	}
+	return s
+}
+
+// operandParens renders the operand of a unary or postfix operator, wrapping it
+// when it binds looser than that operator.
+func operandParens(operand tsvt.Expr, parentPrec precedence) string {
+	s := renderExpr(operand)
+	if exprPrec(operand) < parentPrec {
+		return "(" + s + ")"
+	}
+	return s
 }
 
 // renderBool reconstructs a boolean literal.

@@ -170,7 +170,9 @@ func TestCompute_ExcelOperators(t *testing.T) {
 		`"a" & "b"`:         "ab",   // text concatenation
 		"A1 & C1":           "23",   // number operands concatenate as text
 		"mod(D1, C1)":       "1",    // MOD replaces the retired binary %
-		"mod(-7, 3)":        "-1",   // truncated toward zero
+		"mod(-7, 3)":        "2",    // divisor-signed (Excel MOD): -7 - 3*floor(-7/3)
+		"mod(3, -2)":        "-1",   // result takes the divisor's sign
+		"mod(-3, 2)":        "1",    // …not the dividend's (Go's math.Mod gives -1)
 		"TRUE":              "TRUE", // boolean literal
 		"FALSE":             "FALSE",
 		"if(TRUE, A1, C1)":  "2",

@@ -62,9 +62,22 @@ func extreme(args []Value, pick func(a, b float64) float64) Value {
 	return numberValue(floatVal(best))
 }
 
+// fnCountNumbers counts the numeric operands — numbers and dates (a date is a
+// number); text, booleans, and empty operands are not counted. This is Excel's
+// COUNT, distinct from COUNTA (fnCount), which counts every non-empty operand.
+func fnCountNumbers(args []Value) Value {
+	count := 0
+	for _, arg := range args {
+		if arg.kind == kindNumber || arg.kind == kindDate {
+			count++
+		}
+	}
+	return numberValue(floatVal(count))
+}
+
 // fnCount counts the non-empty operands (error operands are short-circuited by
-// the eager dispatcher before they reach here). COUNTA-style; COUNT's
-// numbers-only variant arrives with the statistical phase.
+// the eager dispatcher before they reach here) — Excel's COUNTA. The numbers-only
+// COUNT is fnCountNumbers.
 func fnCount(args []Value) Value {
 	count := 0
 	for _, arg := range args {
@@ -137,10 +150,12 @@ func fnConcat(args []Value) Value {
 	return stringValue(textVal(b.String()))
 }
 
-// fnLen is the length of a single operand's string form. Arity is enforced by
-// the registry; errors are short-circuited before they reach here.
+// fnLen is the character (rune) length of a single operand's string form, not
+// its UTF-8 byte length — so LEN("café") is 4, matching Excel and the other
+// rune-based text builtins. Arity is enforced by the registry; errors are
+// short-circuited before they reach here.
 func fnLen(args []Value) Value {
-	return numberValue(floatVal(len(args[0].String())))
+	return numberValue(floatVal(len([]rune(args[0].String()))))
 }
 
 // fnMod is the remainder of dividing the first operand by the second (Excel MOD,

@@ -54,13 +54,12 @@ func fnHour(args []Value) Value   { return dateField(args, timeHour) }
 func fnMinute(args []Value) Value { return dateField(args, timeMinute) }
 func fnSecond(args []Value) Value { return dateField(args, timeSecond) }
 
-func timeYear(t time.Time) floatVal    { return floatVal(t.Year()) }
-func timeMonth(t time.Time) floatVal   { return floatVal(t.Month()) }
-func timeDay(t time.Time) floatVal     { return floatVal(t.Day()) }
-func timeHour(t time.Time) floatVal    { return floatVal(t.Hour()) }
-func timeMinute(t time.Time) floatVal  { return floatVal(t.Minute()) }
-func timeSecond(t time.Time) floatVal  { return floatVal(t.Second()) }
-func timeWeekday(t time.Time) floatVal { return floatVal(int(t.Weekday()) + 1) }
+func timeYear(t time.Time) floatVal   { return floatVal(t.Year()) }
+func timeMonth(t time.Time) floatVal  { return floatVal(t.Month()) }
+func timeDay(t time.Time) floatVal    { return floatVal(t.Day()) }
+func timeHour(t time.Time) floatVal   { return floatVal(t.Hour()) }
+func timeMinute(t time.Time) floatVal { return floatVal(t.Minute()) }
+func timeSecond(t time.Time) floatVal { return floatVal(t.Second()) }
 
 // dateField reads one numeric field from the first argument's date.
 func dateField(args []Value, field func(t time.Time) floatVal) Value {
@@ -71,8 +70,45 @@ func dateField(args []Value, field func(t time.Time) floatVal) Value {
 	return numberValue(field(t))
 }
 
-// fnWeekday is the 1-based day of week (Sunday = 1).
-func fnWeekday(args []Value) Value { return dateField(args, timeWeekday) }
+// fnWeekday is the day of week of the first argument's date. The optional second
+// argument is Excel's return_type numbering: 1 (default) Sunday=1..Saturday=7;
+// 2 Monday=1..Sunday=7; 3 Monday=0..Sunday=6. Any other type is #NUM!.
+func fnWeekday(args []Value) Value {
+	t, bad := argTime(args)
+	if bad.isError() {
+		return bad
+	}
+	return weekdayNumber(t.Weekday(), args)
+}
+
+// weekdayType reads the optional return_type argument, defaulting to 1.
+func weekdayType(args []Value) (int, Value) {
+	if len(args) < 2 {
+		return 1, Value{}
+	}
+	n, bad := intArg(args[1])
+	return int(n), bad
+}
+
+// weekdayNumber maps a Go weekday (Sunday=0..Saturday=6) to Excel's numbering for
+// the requested return_type.
+func weekdayNumber(wd time.Weekday, args []Value) Value {
+	kind, bad := weekdayType(args)
+	if bad.isError() {
+		return bad
+	}
+	sun := int(wd) // Sunday=0 … Saturday=6
+	switch kind {
+	case 1:
+		return numberValue(floatVal(sun + 1)) // Sunday=1 … Saturday=7
+	case 2:
+		return numberValue(floatVal((sun+6)%7 + 1)) // Monday=1 … Sunday=7
+	case 3:
+		return numberValue(floatVal((sun + 6) % 7)) // Monday=0 … Sunday=6
+	default:
+		return errorValue(ErrNum)
+	}
+}
 
 // fnDate builds a date serial from year, month, day (each normalized).
 func fnDate(args []Value) Value {

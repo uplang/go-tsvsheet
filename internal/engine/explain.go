@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"time"
 
 	"github.com/uplang/go-tsvsheet/internal/constants"
@@ -43,9 +44,24 @@ func traceInputs(comp computer, expr tsvt.Expr) []TraceInput {
 	res := resolver{comp: comp}
 	var inputs []TraceInput
 	walkRefs(expr, func(ref tsvt.Reference) {
-		inputs = append(inputs, TraceInput{Ref: renderReference(ref), Value: res.resolveOperand(ref).scalar().String()})
+		inputs = append(inputs, TraceInput{Ref: renderReference(ref), Value: traceValue(res.resolveOperand(ref))})
 	})
 	return inputs
+}
+
+// traceValue renders a resolved reference for a trace: a single cell as its
+// value, a multi-cell range as its cell values joined with ", " — so a range
+// input reads informatively rather than the #VALUE! that scalar() yields for a
+// range in a scalar context.
+func traceValue(cs cellset) string {
+	if cs.isSingle {
+		return cs.scalar().String()
+	}
+	parts := make([]string, len(cs.values))
+	for i, v := range cs.values {
+		parts[i] = v.String()
+	}
+	return strings.Join(parts, ", ")
 }
 
 // walkRefs visits every reference operand in an expression tree.

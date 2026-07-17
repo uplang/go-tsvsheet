@@ -95,26 +95,30 @@ func arithmetic(op tsvt.BinaryOp, left, right Value) Value {
 	return apply(op, floatVal(l), floatVal(r))
 }
 
-// apply computes a numeric binary result, guarding division by zero.
+// apply computes a numeric binary result, guarding division by zero and mapping
+// a non-finite result (overflow to ±Inf, or a domain error such as a negative
+// base to a fractional power) to #NUM! rather than leaking a Go "NaN"/"+Inf"
+// token into the cell — matching Excel and the POWER/SQRT builtins.
 func apply(op tsvt.BinaryOp, l, r floatVal) Value {
 	switch op {
 	case tsvt.OpMul:
-		return numberValue(l * r)
+		return mathResult(l * r)
 	case tsvt.OpAdd:
-		return numberValue(l + r)
+		return mathResult(l + r)
 	case tsvt.OpSub:
-		return numberValue(l - r)
+		return mathResult(l - r)
 	case tsvt.OpPow:
-		return numberValue(power(l, r))
+		return mathResult(power(l, r))
 	default: // OpDiv
 		return divide(l, r)
 	}
 }
 
-// divide applies division, yielding #DIV/0! on a zero divisor.
+// divide applies division, yielding #DIV/0! on a zero divisor and #NUM! on a
+// non-finite (overflow) quotient.
 func divide(l, r floatVal) Value {
 	if r == 0 {
 		return errorValue(ErrDiv)
 	}
-	return numberValue(l / r)
+	return mathResult(l / r)
 }

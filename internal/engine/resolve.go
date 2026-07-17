@@ -127,14 +127,17 @@ func (r resolver) resolveSingle(cell tsvt.CellRef) cellset {
 	return cellset{values: []Value{r.comp.read(rowIndex(at.Row), colIndex(at.Col))}, isSingle: true}
 }
 
-// resolveMatrix resolves the rectangular hull of two A1 corners (`A1:B3`).
+// resolveMatrix resolves the rectangular hull of two A1 corners (`A1:B3`). When
+// both corners are the same cell (`A1:A1`, directly or after a structural edit
+// collapses a span), the result is a single cell — so it reads as that cell's
+// value in a scalar context rather than #VALUE!.
 func (r resolver) resolveMatrix(from, to tsvt.CellRef) cellset {
 	a, aok := a1Address(from)
 	b, bok := a1Address(to)
 	if !aok || !bok {
 		return cellset{values: []Value{errorValue(ErrRef)}}
 	}
-	return cellset{values: r.hull(a, b)}
+	return cellset{values: r.hull(a, b), isSingle: boolResult(a == b)}
 }
 
 // hull reads every cell in the inclusive rectangle spanned by a and b.

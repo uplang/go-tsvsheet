@@ -53,6 +53,20 @@ func TestCheck_KnownFunctionsClean(t *testing.T) {
 	)
 }
 
+func TestCheck_ImportFunctionsKnown(t *testing.T) {
+	t.Parallel()
+
+	// The lazily-dispatched IMPORT* functions are known builtins — Check must not
+	// report them as unknown functions (they resolve to #IMPORT! at compute time
+	// only when no fetcher is injected, which is a value, not a static error).
+	for _, fn := range []string{"importcell", "importrow", "importcolumn", "importrange", "importsheet"} {
+		t.Run(fn, func(t *testing.T) {
+			t.Parallel()
+			assert.Empty(t, engine.Check(parse(t, "="+fn+`("https://x/v")`+"\n")))
+		})
+	}
+}
+
 func TestCheck_WalksIntoUnaryPercentBinaryAndCall(t *testing.T) {
 	t.Parallel()
 
@@ -82,11 +96,13 @@ func TestExplain_Formula(t *testing.T) {
 func TestExplain_RangeInput(t *testing.T) {
 	t.Parallel()
 
-	// A range operand renders as a two-cell A1 range in the trace.
+	// A range operand renders as a two-cell A1 range whose value lists the
+	// range's cells — not the #VALUE! that scalar reduction would yield.
 	trace, err := engine.Explain(parse(t, "1\t2\t=sum(A1:B1)\n"), engine.Address{Row: 0, Col: 2})
 	require.NoError(t, err)
 	require.Len(t, trace.Inputs, 1)
 	assert.Equal(t, "A1:B1", trace.Inputs[0].Ref)
+	assert.Equal(t, "1, 2", trace.Inputs[0].Value)
 }
 
 func TestExplain_Literal(t *testing.T) {
