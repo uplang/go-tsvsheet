@@ -7,14 +7,14 @@
 COVER_PKGS = $(shell go list ./... | grep -v /internal/grammar)
 VET_PKGS = $(shell go list ./... | grep -v /internal/grammar)
 
-# The browser playground: compile the engine (cmd/wasm, js/wasm-tagged so it is
-# invisible to the host gate) to WebAssembly and stage its runtime alongside the
-# authored web/playground/index.html into dist/ (gitignored). Deploying to the
-# docs site is copying dist/playground/* into ../docs.tsvsheet.go/static/playground/.
-PLAYGROUND := dist/playground
+# The engine WebAssembly: compile ./browser (js/wasm-tagged so it is invisible to
+# the host gate) to tsvsheet.wasm, staged with Go's wasm_exec.js runtime into
+# dist/ (gitignored). The release CI attaches these as versioned assets that
+# browser consumers (the docs playground, tsvsheet.js) pin — there is no separate
+# wasm repo.
+DIST := dist
 .PHONY: wasm
-wasm: ## Build the browser playground (WASM engine + runtime) into dist/playground
-	mkdir -p $(PLAYGROUND)
-	GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o $(PLAYGROUND)/main.wasm ./cmd/wasm
-	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" $(PLAYGROUND)/wasm_exec.js
-	cp web/playground/index.html $(PLAYGROUND)/index.html
+wasm: ## Build the engine WebAssembly (tsvsheet.wasm + runtime) into dist/
+	mkdir -p $(DIST)
+	GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o $(DIST)/tsvsheet.wasm ./browser
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" $(DIST)/wasm_exec.js

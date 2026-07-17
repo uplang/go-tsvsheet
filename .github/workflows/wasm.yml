@@ -1,0 +1,31 @@
+name: wasm
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+concurrency:
+  group: wasm-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          check-latest: true
+          cache: true
+      # Build the engine WebAssembly (dist/tsvsheet.wasm + dist/wasm_exec.js) and
+      # attach it to the release that triggered this run, so browser consumers
+      # (the docs playground, tsvsheet.js) pin a versioned tsvsheet.wasm.
+      - run: make wasm
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/tsvsheet.wasm
+            dist/wasm_exec.js
