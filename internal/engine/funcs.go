@@ -92,7 +92,7 @@ func (r resolver) evalCall(call tsvt.Call) Value {
 	if !fn.accepts(argCount(len(call.Args))) {
 		return errorValue(ErrValue)
 	}
-	values := r.argValues(call.Args)
+	values := r.argValues(call.Args, fn.spec)
 	if bad, found := firstError(values); found {
 		return bad
 	}
@@ -156,7 +156,7 @@ func (r resolver) evalRept(args []tsvt.Expr) Value {
 	if len(args) != 2 {
 		return errorValue(ErrValue)
 	}
-	values := r.argValues(args)
+	values := r.argValues(args, paramModes{})
 	if bad, found := firstError(values); found {
 		return bad
 	}
@@ -273,12 +273,14 @@ var inspectors = map[string]func(v Value) Value{
 	"type":      func(v Value) Value { return numberValue(floatVal(typeCode(v))) },
 }
 
-// function is a registered eager builtin: its arity bounds and its impl over
-// pre-evaluated, error-free argument values (ADR 0004 §2). Lazy builtins that
-// evaluate their own arguments (currently only `if`) are dispatched separately
-// so the registry stays a cycle-free var initializer.
+// function is a registered eager builtin: its arity bounds, its parameter
+// modes, and its impl over pre-evaluated, error-free argument values (ADR 0004
+// §2). Lazy builtins that evaluate their own arguments (currently only `if`)
+// are dispatched separately so the registry stays a cycle-free var
+// initializer.
 type function struct {
 	impl    func(args []Value) Value
+	spec    paramModes
 	minArgs argCount
 	maxArgs argCount // negative means variadic (unbounded)
 }
@@ -315,14 +317,70 @@ func (r resolver) evalIf(args []tsvt.Expr) Value {
 	return r.eval(args[2])
 }
 
-// argValues flattens call arguments into their resolved cell values so an
-// aggregate sees every cell of a range argument (§11.3).
-func (r resolver) argValues(args []tsvt.Expr) []Value {
+// argMode selects how an eager parameter slot consumes its operand (ADR 0004
+// §2): a scalar slot yields exactly one value, a cells slot flattens a range
+// or array operand row-major into the argument list.
+type argMode int
+
+const (
+	modeScalar argMode = iota
+	modeCells
+)
+
+// paramModes declares a function's parameter slots: lead modes bind the first
+// arguments, tail modes the last, and rest every slot between. The zero value
+// is all-scalar — the default for positional (scalar-parameter) functions.
+type paramModes struct {
+	lead []argMode
+	tail []argMode
+	rest argMode
+}
+
+// mode is the declared mode of argument slot i in a call of n arguments.
+func (p paramModes) mode(i argIndex, n argCount) argMode {
+	if int(i) < len(p.lead) {
+		return p.lead[i]
+	}
+	if tailAt := int(n) - len(p.tail); int(i) >= tailAt {
+		return p.tail[int(i)-tailAt]
+	}
+	return p.rest
+}
+
+// The recurring parameter shapes: an aggregate flattens every slot (SUM,
+// AND, …), LARGE/SMALL flatten their values but keep the trailing k scalar,
+// and NPV keeps its leading rate scalar ahead of the flattened cashflows.
+var (
+	cellsRest       = paramModes{rest: modeCells}
+	cellsThenK      = paramModes{rest: modeCells, tail: []argMode{modeScalar}}
+	scalarThenCells = paramModes{lead: []argMode{modeScalar}, rest: modeCells}
+)
+
+// argValues materializes call arguments per the declared parameter modes: a
+// cells slot contributes every cell of a range or array operand (§11.3), a
+// scalar slot exactly one value — so a multi-cell operand can never shift the
+// arguments that follow it (go-tsvsheet#2).
+func (r resolver) argValues(args []tsvt.Expr, spec paramModes) []Value {
 	values := make([]Value, 0, len(args))
-	for _, arg := range args {
-		values = append(values, r.argCells(arg)...)
+	for i, arg := range args {
+		if spec.mode(argIndex(i), argCount(len(args))) == modeCells {
+			values = append(values, r.argCells(arg)...)
+			continue
+		}
+		values = append(values, r.argScalar(arg))
 	}
 	return values
+}
+
+// argScalar evaluates one argument in scalar context (ADR 0004 §2): eval
+// already reduces a multi-cell range to #VALUE! (cellset.scalar), and an
+// array reduces to its top-left element per the pinned no-broadcasting rule.
+func (r resolver) argScalar(arg tsvt.Expr) Value {
+	v := r.eval(arg)
+	if v.kind == kindArray {
+		return v.arr[0][0]
+	}
+	return v
 }
 
 // argCells expands one argument: a bare reference contributes all its resolved
@@ -345,15 +403,15 @@ func (r resolver) argCells(arg tsvt.Expr) []Value {
 // is dispatched separately (evalCall/isKnownFunc) because it is lazy, which also
 // keeps this a cycle-free var initializer.
 var functions = map[string]function{
-	"sum":     {impl: fnSum, minArgs: 1, maxArgs: -1},
-	"min":     {impl: fnMin, minArgs: 1, maxArgs: -1},
-	"max":     {impl: fnMax, minArgs: 1, maxArgs: -1},
-	"count":   {impl: fnCountNumbers, minArgs: 1, maxArgs: -1},
-	"avg":     {impl: fnAvg, minArgs: 1, maxArgs: -1},
-	"average": {impl: fnAvg, minArgs: 1, maxArgs: -1},
+	"sum":     {impl: fnSum, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"min":     {impl: fnMin, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"max":     {impl: fnMax, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"count":   {impl: fnCountNumbers, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"avg":     {impl: fnAvg, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"average": {impl: fnAvg, spec: cellsRest, minArgs: 1, maxArgs: -1},
 	"abs":     {impl: fnAbs, minArgs: 1, maxArgs: 1},
 	"round":   {impl: fnRound, minArgs: 1, maxArgs: 2},
-	"concat":  {impl: fnConcat, minArgs: 1, maxArgs: -1},
+	"concat":  {impl: fnConcat, spec: cellsRest, minArgs: 1, maxArgs: -1},
 	"len":     {impl: fnLen, minArgs: 1, maxArgs: 1},
 	"mod":     {impl: fnMod, minArgs: 2, maxArgs: 2},
 	"output":  {impl: outputValue, minArgs: 1, maxArgs: 1},
@@ -371,8 +429,8 @@ var functions = map[string]function{
 	"log10":    {impl: unaryNumeric(mLog10), minArgs: 1, maxArgs: 1},
 	"log":      {impl: fnLog, minArgs: 1, maxArgs: 2},
 	"quotient": {impl: fnQuotient, minArgs: 2, maxArgs: 2},
-	"product":  {impl: fnProduct, minArgs: 1, maxArgs: -1},
-	"sumsq":    {impl: fnSumsq, minArgs: 1, maxArgs: -1},
+	"product":  {impl: fnProduct, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"sumsq":    {impl: fnSumsq, spec: cellsRest, minArgs: 1, maxArgs: -1},
 	"sin":      {impl: unaryNumeric(mSin), minArgs: 1, maxArgs: 1},
 	"cos":      {impl: unaryNumeric(mCos), minArgs: 1, maxArgs: 1},
 	"tan":      {impl: unaryNumeric(mTan), minArgs: 1, maxArgs: 1},
@@ -387,9 +445,9 @@ var functions = map[string]function{
 	"radians":  {impl: unaryNumeric(toRadians), minArgs: 1, maxArgs: 1},
 
 	// Phase 2 — logical (eager; conditionals and inspectors dispatch lazily).
-	"and":   {impl: fnAnd, minArgs: 1, maxArgs: -1},
-	"or":    {impl: fnOr, minArgs: 1, maxArgs: -1},
-	"xor":   {impl: fnXor, minArgs: 1, maxArgs: -1},
+	"and":   {impl: fnAnd, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"or":    {impl: fnOr, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"xor":   {impl: fnXor, spec: cellsRest, minArgs: 1, maxArgs: -1},
 	"not":   {impl: fnNot, minArgs: 1, maxArgs: 1},
 	"true":  {impl: fnTrue, minArgs: 0, maxArgs: 0},
 	"false": {impl: fnFalse, minArgs: 0, maxArgs: 0},
@@ -406,7 +464,7 @@ var functions = map[string]function{
 	"mid":          {impl: fnMid, minArgs: 3, maxArgs: 3},
 	"exact":        {impl: fnExact, minArgs: 2, maxArgs: 2},
 	"t":            {impl: fnT, minArgs: 1, maxArgs: 1},
-	"concatenate":  {impl: fnConcatenate, minArgs: 1, maxArgs: -1},
+	"concatenate":  {impl: fnConcatenate, spec: cellsRest, minArgs: 1, maxArgs: -1},
 	"find":         {impl: fnFind, minArgs: 2, maxArgs: 3},
 	"search":       {impl: fnSearch, minArgs: 2, maxArgs: 3},
 	"substitute":   {impl: fnSubstitute, minArgs: 3, maxArgs: 4},
@@ -440,22 +498,22 @@ var functions = map[string]function{
 
 	// Phase 6 — statistical (COUNTIF/SUMIF/AVERAGEIF dispatch via the criteria
 	// path).
-	"median":     {impl: fnMedian, minArgs: 1, maxArgs: -1},
-	"mode":       {impl: fnMode, minArgs: 1, maxArgs: -1},
-	"stdev":      {impl: fnStdev, minArgs: 1, maxArgs: -1},
-	"stdevp":     {impl: fnStdevp, minArgs: 1, maxArgs: -1},
-	"var":        {impl: fnVar, minArgs: 1, maxArgs: -1},
-	"varp":       {impl: fnVarp, minArgs: 1, maxArgs: -1},
-	"geomean":    {impl: fnGeomean, minArgs: 1, maxArgs: -1},
-	"large":      {impl: fnLarge, minArgs: 2, maxArgs: -1},
-	"small":      {impl: fnSmall, minArgs: 2, maxArgs: -1},
-	"counta":     {impl: fnCount, minArgs: 1, maxArgs: -1},
-	"countblank": {impl: fnCountblank, minArgs: 1, maxArgs: -1},
+	"median":     {impl: fnMedian, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"mode":       {impl: fnMode, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"stdev":      {impl: fnStdev, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"stdevp":     {impl: fnStdevp, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"var":        {impl: fnVar, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"varp":       {impl: fnVarp, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"geomean":    {impl: fnGeomean, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"large":      {impl: fnLarge, spec: cellsThenK, minArgs: 2, maxArgs: -1},
+	"small":      {impl: fnSmall, spec: cellsThenK, minArgs: 2, maxArgs: -1},
+	"counta":     {impl: fnCount, spec: cellsRest, minArgs: 1, maxArgs: -1},
+	"countblank": {impl: fnCountblank, spec: cellsRest, minArgs: 1, maxArgs: -1},
 
 	// Phase 8 — financial (basic).
 	"pmt": {impl: fnPmt, minArgs: 3, maxArgs: 5},
 	"fv":  {impl: fnFv, minArgs: 3, maxArgs: 5},
 	"pv":  {impl: fnPv, minArgs: 3, maxArgs: 5},
-	"npv": {impl: fnNpv, minArgs: 2, maxArgs: -1},
+	"npv": {impl: fnNpv, spec: scalarThenCells, minArgs: 2, maxArgs: -1},
 	"sln": {impl: fnSln, minArgs: 3, maxArgs: 3},
 }

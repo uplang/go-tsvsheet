@@ -25,6 +25,8 @@ type (
 	decimalPlaces int
 	// argCount is a number of arguments passed to a function call.
 	argCount int
+	// argIndex is a 0-based position within a call's argument list.
+	argIndex int
 	// charPos is a character position or count within a text value.
 	charPos int
 )

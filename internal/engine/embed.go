@@ -134,7 +134,7 @@ func (r resolver) sheetTarget(args []tsvt.Expr) (Sheet, Path, []Value, Value, bo
 	if r.comp.env.visiting[resolved] {
 		return Sheet{}, "", nil, errorValue(ErrCirc), false
 	}
-	return sub, resolved, r.argValues(args[1:]), Value{}, true
+	return sub, resolved, r.argValues(args[1:], cellsRest), Value{}, true
 }
 
 // EmbeddedGrid resolves the sub-sheet embedded by a SHEET(...) cell and returns
