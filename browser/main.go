@@ -24,10 +24,10 @@ func main() {
 	obj := js.Global().Get("Object").New()
 	obj.Set("compute", js.FuncOf(compute))
 	obj.Set("setCell", js.FuncOf(setCell))
-	obj.Set("insertRow", js.FuncOf(edit(tsvsheet.Sheet.InsertRow)))
-	obj.Set("deleteRow", js.FuncOf(edit(tsvsheet.Sheet.DeleteRow)))
-	obj.Set("insertCol", js.FuncOf(edit(tsvsheet.Sheet.InsertCol)))
-	obj.Set("deleteCol", js.FuncOf(edit(tsvsheet.Sheet.DeleteCol)))
+	obj.Set("insertRow", js.FuncOf(edit(tsvsheet.Document.InsertRow)))
+	obj.Set("deleteRow", js.FuncOf(edit(tsvsheet.Document.DeleteRow)))
+	obj.Set("insertCol", js.FuncOf(edit(tsvsheet.Document.InsertCol)))
+	obj.Set("deleteCol", js.FuncOf(edit(tsvsheet.Document.DeleteCol)))
 	obj.Set("references", js.FuncOf(references))
 	obj.Set("explain", js.FuncOf(explain))
 	js.Global().Set("tsvsheet", obj)
@@ -35,22 +35,28 @@ func main() {
 }
 
 // view is the render model returned to JS after any operation: the computed
-// grid, the (possibly edited) source, static diagnostics, and whether any
-// formula is clock-volatile (so the page can offer periodic recompute).
+// grid, the (possibly edited) source, the canonical source text (the one
+// sanctioned serialization — comment and shebang lines preserved), static
+// diagnostics, and whether any formula is clock-volatile (so the page can
+// offer periodic recompute).
 type view struct {
 	Computed    [][]string            `json:"computed"`
 	Source      [][]string            `json:"source"`
+	Text        string                `json:"text"`
 	Diagnostics []tsvsheet.Diagnostic `json:"diagnostics"`
 	Volatile    bool                  `json:"volatile"`
 }
 
-// render computes a sheet under the tighter browser limits and its own clock,
-// and gathers the read model.
-func render(sheet tsvsheet.Sheet) view {
+// render computes a document's sheet under the tighter browser limits and its
+// own clock, and gathers the read model. Text and the grids come from the same
+// Document, so the view always describes exactly the text it carries.
+func render(doc tsvsheet.Document) view {
+	sheet := doc.Sheet()
 	opts := tsvsheet.ComputeOptions{At: time.Now(), Limits: tsvsheet.BrowserLimits()}
 	return view{
 		Computed:    sheet.ComputeWith(opts),
 		Source:      sheet.Source(),
+		Text:        string(doc.Text()),
 		Diagnostics: tsvsheet.Check(sheet),
 		Volatile:    sheet.IsVolatile(),
 	}
@@ -70,27 +76,28 @@ func addr(row, col js.Value) tsvsheet.Address {
 	return tsvsheet.Address{Row: row.Int(), Col: col.Int()}
 }
 
-// parse is the shared first step of every function: the source is args[0].
-func parse(args []js.Value) (tsvsheet.Sheet, error) {
-	return tsvsheet.Parse([]byte(args[0].String()))
+// parse is the shared first step of every function: the source is args[0],
+// parsed with its line layout retained so serialization preserves comments.
+func parse(args []js.Value) (tsvsheet.Document, error) {
+	return tsvsheet.ParseDocument([]byte(args[0].String()))
 }
 
 // compute parses and renders the source (args: source).
 func compute(_ js.Value, args []js.Value) any {
-	sheet, err := parse(args)
+	doc, err := parse(args)
 	if err != nil {
 		return result(nil, err)
 	}
-	return result(render(sheet), nil)
+	return result(render(doc), nil)
 }
 
 // setCell replaces one cell and re-renders (args: source, row, col, text).
 func setCell(_ js.Value, args []js.Value) any {
-	sheet, err := parse(args)
+	doc, err := parse(args)
 	if err != nil {
 		return result(nil, err)
 	}
-	updated, err := sheet.Set(addr(args[1], args[2]), args[3].String(), tsvsheet.BrowserLimits())
+	updated, err := doc.SetCell(addr(args[1], args[2]), args[3].String(), tsvsheet.BrowserLimits())
 	if err != nil {
 		return result(nil, err)
 	}
@@ -99,36 +106,36 @@ func setCell(_ js.Value, args []js.Value) any {
 
 // edit adapts an immutable structural operation into a JS function that parses,
 // applies it at the given cell, and re-renders (args: source, row, col).
-func edit(op func(tsvsheet.Sheet, tsvsheet.Address) tsvsheet.Sheet) func(js.Value, []js.Value) any {
+func edit(op func(tsvsheet.Document, tsvsheet.Address) tsvsheet.Document) func(js.Value, []js.Value) any {
 	return func(_ js.Value, args []js.Value) any {
-		sheet, err := parse(args)
+		doc, err := parse(args)
 		if err != nil {
 			return result(nil, err)
 		}
-		return result(render(op(sheet, addr(args[1], args[2]))), nil)
+		return result(render(op(doc, addr(args[1], args[2]))), nil)
 	}
 }
 
 // references returns a cell's precedents and dependents (args: source, row, col).
 func references(_ js.Value, args []js.Value) any {
-	sheet, err := parse(args)
+	doc, err := parse(args)
 	if err != nil {
 		return result(nil, err)
 	}
 	at := addr(args[1], args[2])
 	return result(map[string]any{
-		"precedents": sheet.Precedents(at),
-		"dependents": sheet.Dependents(at),
+		"precedents": doc.Sheet().Precedents(at),
+		"dependents": doc.Sheet().Dependents(at),
 	}, nil)
 }
 
 // explain traces how a cell was produced (args: source, row, col).
 func explain(_ js.Value, args []js.Value) any {
-	sheet, err := parse(args)
+	doc, err := parse(args)
 	if err != nil {
 		return result(nil, err)
 	}
-	trace, err := tsvsheet.Explain(sheet, addr(args[1], args[2]))
+	trace, err := tsvsheet.Explain(doc.Sheet(), addr(args[1], args[2]))
 	if err != nil {
 		return result(nil, err)
 	}

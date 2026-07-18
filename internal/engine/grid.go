@@ -30,24 +30,37 @@ type Grid [][]string
 // beginning with `# ` (hash-space). An error-value cell like `#N/A` (hash then a
 // non-space) is data, not a comment. A read failure surfaces as ErrReadInput.
 func ReadTSV(r io.Reader) (Grid, error) {
+	grid := Grid{}
+	err := scanLines(r, func(text string, isComment bool) {
+		if !isComment {
+			grid = append(grid, strings.Split(text, tab))
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return grid, nil
+}
+
+// scanLines reads r line by line, calling fn with each line's text and whether
+// it is a comment line (a first-line `#!` shebang or a `# ` hash-space line —
+// the lines ReadTSV skips and Document preserves). A read failure surfaces as
+// ErrReadInput.
+func scanLines(r io.Reader, fn func(text string, isComment bool)) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), maxLineBytes)
 
-	grid := Grid{}
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
 		text := scanner.Text()
 		isShebang := lineNum == 1 && strings.HasPrefix(text, "#!")
-		if isShebang || strings.HasPrefix(text, "# ") {
-			continue
-		}
-		grid = append(grid, strings.Split(text, tab))
+		fn(text, isShebang || strings.HasPrefix(text, "# "))
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, constants.ErrReadInput.With(err)
+		return constants.ErrReadInput.With(err)
 	}
-	return grid, nil
+	return nil
 }
 
 // maxLineBytes bounds a single scanned row (1 MiB) so a pathological input

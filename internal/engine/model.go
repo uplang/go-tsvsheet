@@ -52,6 +52,12 @@ func Parse(src []byte) (Sheet, error) {
 	if err != nil {
 		return Sheet{}, err
 	}
+	return sheetFromGrid(grid)
+}
+
+// sheetFromGrid parses every field of a raw grid into a Sheet, naming the cell
+// on a formula syntax error.
+func sheetFromGrid(grid Grid) (Sheet, error) {
 	cells := make([][]cell, len(grid))
 	for r, row := range grid {
 		cells[r] = make([]cell, len(row))

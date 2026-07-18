@@ -119,6 +119,17 @@ const (
 // malformed formula is a syntax error naming its cell.
 func Parse(src []byte) (Sheet, error) { return engine.Parse(src) }
 
+// Document is a parsed .tsvt file with its physical line layout retained, so
+// comment and shebang lines — which the grid drops — survive editing and are
+// written back in position by Text. Document is immutable: every editing
+// operation returns a new Document. It is the one sanctioned way to serialize
+// a .tsvt; frontends must never rebuild a file from a grid.
+type Document = engine.Document
+
+// ParseDocument reads a .tsvt file like Parse, additionally recording the
+// physical line layout so comment and shebang lines are preserved by Text.
+func ParseDocument(src []byte) (Document, error) { return engine.ParseDocument(src) }
+
 // ParseAddress parses spreadsheet notation (`A1`, `F4`, `AA10`) into an
 // Address. The column is one or more ASCII uppercase letters, the row a
 // positive integer; anything else is constants.ErrInvalidValue.
