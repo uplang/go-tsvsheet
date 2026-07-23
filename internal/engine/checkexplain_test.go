@@ -145,15 +145,20 @@ func TestExplain_RendersEveryExpressionForm(t *testing.T) {
 		"=A1%":             "A1%",
 		"=A1 + 1":          "A1 + 1",
 		"=abs(A1)":         "abs(A1)",
+		"=pi()":            "pi",              // a nullary call canonicalizes to bare
+		"=pi":              "pi",              // and the bare form round-trips
+		"=now()":           "now",             // holds for any zero-argument call
 		`="other.tsvt"!A1`: `"other.tsvt"!A1`, // cross-sheet single cell
 		`="d.tsvt"!A1:B2`:  `"d.tsvt"!A1:B2`,  // cross-sheet range
 		// The pipe spelling is preserved (§5.4): a piped call renders as the
 		// author's pipe, a chain stays a chain, and an operator capturing a
-		// piped call parenthesizes it.
-		"=A1 | len()":            "A1 | len()",
+		// piped call parenthesizes it. A stage with no explicit arguments
+		// renders bare — the canonical form drops its empty parentheses.
+		"=A1 | len()":            "A1 | len",
+		"=A1 | len":              "A1 | len", // bare stage round-trips unchanged
 		"=A1 | round(2)":         "A1 | round(2)",
-		"=A1 | trim() | len()":   "A1 | trim() | len()",
-		"=(A1 | len()) + 1":      "(A1 | len()) + 1",
+		"=A1 | trim() | len()":   "A1 | trim | len",
+		"=(A1 | len()) + 1":      "(A1 | len) + 1",
 		"=sum(A1 | round(2), 1)": "sum(A1 | round(2),1)", // piped call as an argument needs no parens
 	}
 	for src, want := range cases {

@@ -134,7 +134,7 @@ func TestStructuralEditsRerenderEveryShiftedNodeForm(t *testing.T) {
 	// capture its final call.
 	doc := parseDoc(t, "x\n=-A2 + sum(A2:A2) & B2% & (A2 | len())\n7\t8\n")
 	moved := doc.InsertRow(engine.Address{Row: 0})
-	assert.Equal(t, "\t\nx\n=-A3 + sum(A3:A3) & B3% & (A3 | len())\n7\t8\n", string(moved.Text()))
+	assert.Equal(t, "\t\nx\n=-A3 + sum(A3:A3) & B3% & (A3 | len)\n7\t8\n", string(moved.Text()))
 }
 
 // mustSet applies SetCell, failing the test on error.

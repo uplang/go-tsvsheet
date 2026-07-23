@@ -136,12 +136,23 @@ func renderBool(isTrue boolResult) string {
 }
 
 // renderCall reconstructs a function call in the author's spelling: plain
-// `f(x, a)`, or the pipe form `x | f(a)` it desugared from (§5.4).
+// `f(x, a)`, or the pipe form `x | f(a)` it desugared from (§5.4). A call with
+// no explicit arguments renders bare, without empty parentheses — the canonical
+// form (`pi`, `x | sort`).
 func renderCall(call tsvt.Call) string {
 	if call.IsPiped {
-		return renderExpr(call.Args[0]) + " | " + call.Name + "(" + joinArgs(call.Args[1:]) + ")"
+		return renderExpr(call.Args[0]) + " | " + callTail(funcName(call.Name), call.Args[1:])
 	}
-	return call.Name + "(" + joinArgs(call.Args) + ")"
+	return callTail(funcName(call.Name), call.Args)
+}
+
+// callTail renders a name with its explicit arguments, dropping the empty
+// parentheses of a zero-argument call to the bare canonical form.
+func callTail(name funcName, args []tsvt.Expr) string {
+	if len(args) == 0 {
+		return string(name)
+	}
+	return string(name) + "(" + joinArgs(args) + ")"
 }
 
 // joinArgs renders a comma-joined argument list.

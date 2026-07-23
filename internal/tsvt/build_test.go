@@ -156,10 +156,11 @@ func TestBuild_PipeBindsLoosest(t *testing.T) {
 
 func TestBuild_PipeSyntaxErrors(t *testing.T) {
 	t.Parallel()
-	// The right-hand side must be a §5.3 call, parentheses included; a bare
-	// name, a missing stage, a non-call stage, or a leading pipe is a syntax
-	// error by construction.
-	for _, src := range []string{"A1 |", "A1 | len", "A1 | 5", "A1 | (len())", "| len()"} {
+	// The right-hand side must be a §5.3 call (bare or parenthesized); a missing
+	// stage, a non-call stage, a parenthesized expression, or a leading pipe is a
+	// syntax error by construction. A bare name (`A1 | len`) is now a valid
+	// zero-argument stage and is covered in the build tests, not here.
+	for _, src := range []string{"A1 |", "A1 | 5", "A1 | (len())", "| len()"} {
 		t.Run(src, func(t *testing.T) {
 			t.Parallel()
 			_, err := tsvt.ParseFormula(tsvt.FormulaText(src))
