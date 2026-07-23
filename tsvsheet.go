@@ -20,8 +20,14 @@ type AddressText = engine.AddressText
 type CellInfo = engine.CellInfo
 
 // ComputeOptions configures a compute pass. Loader and Base enable embedded
-// sub-sheets; a zero Loader disables SHEET (it resolves to #REF!).
+// sub-sheets; a zero Loader disables SHEET (it resolves to #REF!). Tick is the
+// recompute-pass ordinal a refreshing frontend increments so TICK()/FRAME()
+// advance across passes.
 type ComputeOptions = engine.ComputeOptions
+
+// Tick is a recompute-pass ordinal read by TICK()/FRAME(); a frontend that
+// re-renders a volatile sheet passes an incrementing value each pass.
+type Tick = engine.Tick
 
 // Diagnostic is an advisory finding about a formula cell: currently an unknown
 // function call (which computes to #NAME?).

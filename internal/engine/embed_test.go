@@ -3,6 +3,7 @@ package engine_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -173,4 +174,15 @@ func TestEmbeddedGrid_UnresolvedIsNotOK(t *testing.T) {
 		Base:   "root",
 	})
 	assert.False(t, ok)
+}
+
+func TestComputeWith_ThreadsTick(t *testing.T) {
+	t.Parallel()
+	// The ComputeWith path (used by refreshing frontends) carries the pass
+	// ordinal, so tick()/frame() advance with it.
+	s, err := engine.Parse([]byte("=tick()\t=frame()\n"))
+	require.NoError(t, err)
+	g := s.ComputeWith(engine.ComputeOptions{At: time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC), Tick: 7})
+	assert.Equal(t, "7", g[0][0])
+	assert.Equal(t, "7", g[0][1])
 }

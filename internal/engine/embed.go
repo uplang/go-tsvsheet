@@ -38,6 +38,7 @@ type ComputeOptions struct {
 	Loader  Loader
 	Base    Path
 	Limits  Limits
+	Tick    Tick
 }
 
 // ComputeWith computes the sheet with an injected sheet loader, so SHEET(...)
@@ -58,7 +59,9 @@ func passComputer(s Sheet, opts ComputeOptions) computer {
 		base:     opts.Base,
 		visiting: map[Path]boolResult{opts.Base: true},
 	}
-	return newEmbedComputer(s, opts.At, env, effectiveLimits(opts.Limits), opts.Fetcher)
+	c := newEmbedComputer(s, opts.At, env, effectiveLimits(opts.Limits), opts.Fetcher)
+	c.tick = opts.Tick
+	return c
 }
 
 // newEmbedComputer is newComputer with an embedding environment, the injected
