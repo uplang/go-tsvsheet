@@ -47,12 +47,18 @@ type view struct {
 	Volatile    bool                  `json:"volatile"`
 }
 
+// browserTick is the recompute-pass ordinal, advanced on every render so
+// tick()/frame() animate under the page's periodic recompute. The wasm bridge is
+// single-threaded (the JS event loop), so a package counter is safe.
+var browserTick tsvsheet.Tick
+
 // render computes a document's sheet under the tighter browser limits and its
 // own clock, and gathers the read model. Text and the grids come from the same
 // Document, so the view always describes exactly the text it carries.
 func render(doc tsvsheet.Document) view {
+	browserTick++
 	sheet := doc.Sheet()
-	opts := tsvsheet.ComputeOptions{At: time.Now(), Limits: tsvsheet.BrowserLimits()}
+	opts := tsvsheet.ComputeOptions{At: time.Now(), Limits: tsvsheet.BrowserLimits(), Tick: browserTick}
 	return view{
 		Computed:    sheet.ComputeWith(opts),
 		Source:      sheet.Source(),
